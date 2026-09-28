@@ -1,0 +1,71 @@
+services:
+  postgres: # name of the service, explicit naming-> container_name: broker-postgres (this does not change DNS name)
+    image: postgres:16
+    environment:
+      POSTGRES_DB: broker_db
+      POSTGRES_USER: broker
+      POSTGRES_PASSWORD: broker123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U broker -d broker_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  
+  broker-1:
+    build: .
+    image: distributed-broker:latest
+    environment:
+      BROKER_ID: 1
+      PORT: 9001
+      IS_LEADER: "true"
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/broker_db
+      POSTGRES_USER: broker
+      POSTGRES_PASSWORD: broker123
+      FOLLOWER_HOSTS: broker-2:9002,broker-3:9003
+    ports:
+      - "9001:9001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  broker-2:
+    build: .
+    image: distributed-broker:latest
+    environment:
+      BROKER_ID: 2
+      PORT: 9002
+      IS_LEADER: "false"
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/broker_db
+      POSTGRES_USER: broker
+      POSTGRES_PASSWORD: broker123
+      LEADER_HOSTS: broker-1:9001
+    ports:
+      - "9002:9002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+  
+  broker-3:
+    build: .
+    image: distributed-broker:latest
+    environment:
+      BROKER_ID: 3
+      PORT: 9003
+      IS_LEADER: "false"
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/broker_db
+      POSTGRES_USER: broker
+      POSTGRES_PASSWORD: broker123
+      LEADER_HOSTS: broker-1:9001
+    ports:
+      - "9003:9003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+# Docker requires any named volume referenced by a service to be declared at the top level first — it's a registration step
+volumes:
+  postgres_data:
